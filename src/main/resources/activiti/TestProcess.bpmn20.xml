@@ -1,0 +1,261 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions id="DocumentProcessDefinition"
+	xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:activiti="http://activiti.org/bpmn"
+	targetNamespace="http://www.activiti.org/bpmn2.0">
+
+	<process id="TestProcess" name="Test Process">
+		<startEvent id="theStart">
+			<extensionElements>
+				<activiti:formProperty id="id" name="Id" type="long" required="true" />
+				<activiti:formProperty id="notes" name="Notes" type="string" required="false" />
+			</extensionElements>
+		</startEvent>
+			
+			<sequenceFlow sourceRef="theStart" targetRef="stResponseMessage1"/>
+			<sequenceFlow sourceRef="stResponseMessage1" targetRef="approveTask">
+				<extensionElements>
+					<!-- due to an annoying activiti issue, we need to remove the 'action' value before moving on to the user task
+						or else we'll get an exception because the user task's 'action' enum may not support 'action' set by a
+						higher level user task. -->
+					<activiti:executionListener event="take" expression="#{execution.removeVariable('action')}"></activiti:executionListener>
+				</extensionElements>
+			</sequenceFlow>
+			
+			<serviceTask id="stResponseMessage1" 
+	             name="Message - Provide a Response Message to the User" 
+	             activiti:class="com.example.ResponseMessageTask">
+	         	<extensionElements>
+	      			<activiti:field name="message" stringValue="Your Document has been submitted for approval." />
+	  			</extensionElements>
+	         </serviceTask>
+			
+						
+			<userTask id="approveTask" name="Approve or Reject Document ${documentId}"
+					activiti:formKey="basicActionForm" activiti:candidateGroups="DocumentApprover">
+				<documentation>
+					Approver and Grantor is notified of a pending Document.
+					Approver has to claim the task and approve/reject Document.
+				</documentation>
+				<extensionElements>
+			   		 <activiti:formProperty id="documentId" required="true" type="long" />
+			   		 <activiti:formProperty id="notes" required="true" type="string" name="Notes"/>
+			   		 <activiti:formProperty id="action" required="true" type="enum"> 
+			   		 	<activiti:value id="approve" name="Approve" /> 
+			   		 	<activiti:value id="reject" name="Reject" /> 
+					 </activiti:formProperty>
+			   		 <activiti:taskListener event="create" delegateExpression="${loaAssignListener}"/>
+						<activiti:taskListener event="create" class="com.example.DueDateAssignmentListener">
+							<extensionElements>
+					      		<activiti:field name="configurationService" expression="${configurationService}"/>
+					      		<activiti:field name="logicalTaskName" stringValue="approverApprove"/>
+					  		</extensionElements>
+					 	</activiti:taskListener>				   		 
+			  	</extensionElements>				
+		    </userTask>
+			<sequenceFlow sourceRef="approveTask" targetRef="loaStatusGateway"/>
+			
+			<exclusiveGateway id="loaStatusGateway" name="Approve or Reject Result Gateway"/>
+	    
+			<sequenceFlow id="approveFlow" sourceRef="loaStatusGateway" targetRef="approved">
+			 	<conditionExpression activiti:type="tFormalExpression">${action == 'approve'}</conditionExpression>
+			</sequenceFlow>
+			    
+			<sequenceFlow id="rejectFlow" sourceRef="loaStatusGateway" targetRef="rejected">
+		  		<conditionExpression activiti:type="tFormalExpression">${action == 'reject'}</conditionExpression>
+			</sequenceFlow>
+			
+			<serviceTask id="approved" name="Approve Document" activiti:expression="${documentService.approve(documentId, notes)}">
+				<documentation>
+					Persist approved .
+				</documentation>
+			</serviceTask>
+			<serviceTask id="stResponseMessageApproved" 
+	             name="Message to User" 
+	             activiti:class="com.example.ResponseMessageTask">
+	         	<extensionElements>
+	      			<activiti:field name="message" expression="Document ${documentId} has been approved. DCA Subtasks will be created for implementation." />
+	  			</extensionElements>
+	        </serviceTask>
+			
+			<sequenceFlow sourceRef="approved" targetRef="stResponseMessageApproved"/>
+			<sequenceFlow sourceRef="stResponseMessageApproved" targetRef="checkPreviousVersion"/>
+			
+			<serviceTask id="checkPreviousVersion" name="Check if a previous version exists for this loa" 
+				activiti:expression="${documentService.isThereAPreviousVersion(documentId)}"
+				activiti:resultVariable="found">
+				<documentation>
+					Check if this is an newer version and is being renewed. If so get the previous version of 
+				</documentation>
+			</serviceTask>
+			
+			<sequenceFlow sourceRef="checkPreviousVersion" targetRef="previousVersionGateway"/>
+			
+			<exclusiveGateway id="previousVersionGateway" name="Previous Document Version Gateway"/>
+				
+			<sequenceFlow id="noPreviousVersionFlow" sourceRef="previousVersionGateway" targetRef="approvedNotification" name="not found">
+				<conditionExpression activiti:type="tFormalExpression">${! found}</conditionExpression>
+			</sequenceFlow>
+	
+			<sequenceFlow id="previousVersionFlow" sourceRef="previousVersionGateway" targetRef="renewalApprovedNotification" name="found">
+				<conditionExpression activiti:type="tFormalExpression">${found}</conditionExpression>
+			</sequenceFlow>
+			
+		
+			
+			<serviceTask id="rejected" name="Reject Document" activiti:expression="${documentService.reject(documentId, notes)}">
+				<documentation>
+					Persist rejected .
+				</documentation>
+			</serviceTask>
+			<serviceTask id="stResponseMessageRejected" 
+	             name="Message to User" 
+	             activiti:class="com.example.ResponseMessageTask">
+	         	<extensionElements>
+	      			<activiti:field name="message" expression="Document ${documentId} has been Rejected." />
+	  			</extensionElements>
+	        </serviceTask>
+			
+			
+			<sequenceFlow sourceRef="rejected" targetRef="stResponseMessageRejected"/>
+			<sequenceFlow sourceRef="stResponseMessageRejected" targetRef="rejectedNotification"/>
+			
+			<serviceTask id="approvedNotification" name="Notify Grantee, Grantor and DCAs of Acceptance" activiti:expression="${notificationService.sendNotification(documentId, approvedTemplate, true, true, false, true)}"
+				activiti:async="true">
+				<documentation>
+					Grantee, Grantor and Data Category Admins are notified of approved Document
+				</documentation>
+			</serviceTask>
+			
+			<serviceTask id="renewalApprovedNotification" name="Notify Grantee, Grantor and DCAs of Renewal Acceptance" activiti:expression="${notificationService.sendNotification(documentId, renewalApprovedTemplate, true, true, false, true, null)}"
+				activiti:async="true">
+				<documentation>
+					Grantee, Grantor and Data Category Admins are notified of renewal approved Document
+				</documentation>
+			</serviceTask>
+			
+			<serviceTask id="rejectedNotification" name="Notify Grantee and Grantor of Rejection" activiti:expression="${notificationService.sendNotification(documentId, rejectedTemplate, true, true, false, false)}"
+				activiti:async="true">
+				<documentation>
+					Grantee and Grantor are notified of rejected Document
+				</documentation>
+			</serviceTask>
+			
+			
+			<sequenceFlow sourceRef="approvedNotification" targetRef="loadById"/>
+			<sequenceFlow sourceRef="renewalApprovedNotification" targetRef="loadById"/>
+
+			<sequenceFlow sourceRef="loadById" targetRef="egAuthGroupsExist"/>
+
+			<sequenceFlow sourceRef="rejectedNotification" targetRef="theEnd"/>
+		
+		
+			<serviceTask id="loadById" name="Load the Document" activiti:expression="${documentService.getA(documentId)}" activiti:async="false" activiti:resultVariable="loa"/>
+
+
+
+			
+			<exclusiveGateway id="egAuthGroupsExist" name="Are there DCAs?"/>
+			<sequenceFlow name="No DCAs" sourceRef="egAuthGroupsExist" targetRef="theEnd">
+				<conditionExpression activiti:type="tFormalExpression">${documentService.getAuthGroupsForDataCategories(documentId).isEmpty()}</conditionExpression>
+			</sequenceFlow>
+			<sequenceFlow name="Yes, DCAs" sourceRef="egAuthGroupsExist" targetRef="implementReadySubProcess"/>
+			
+			
+			
+			
+			<!-- This subprocess is responsible for a fan out of User Tasks to Each Data Category Group -->
+			<subProcess id="implementReadySubProcess" name="Create Task for Each DCA To Implement">
+				
+				<multiInstanceLoopCharacteristics isSequential="false" activiti:collection="${documentService.getAuthGroupsForDataCategories(documentId)}" activiti:elementVariable="currGroup" > 
+				</multiInstanceLoopCharacteristics>
+				
+				<startEvent id="subProcessStart"/>
+				
+				<sequenceFlow sourceRef="subProcessStart" targetRef="implementReadyUserTask">
+					<extensionElements>
+						<!-- due to an annoying activiti issue, we need to remove the 'action' value before moving on to the user task
+							or else we'll get an exception because the user task's 'action' enum may not support 'action' set by a
+							higher level user task. -->
+						<activiti:executionListener event="take" expression="#{execution.removeVariable('action')}"></activiti:executionListener>
+					</extensionElements>
+				</sequenceFlow>
+				
+				<userTask id="implementReadyUserTask" name="Implement Document ${documentId} for ${currGroup}"
+					activiti:formKey="dcaImplementForm" activiti:candidateGroups="${currGroup}">
+					<documentation>
+						Category Admin may update Document and mark for implementation.
+						Only assigns the task to DCAs for the category in the Document.
+					</documentation>	
+					<extensionElements>
+						<activiti:taskListener event="create" delegateExpression="${loaAssignListener}"/>
+						<!--  is status necessary here? is documentId? we know what Document it is for crying out loud -->
+						<activiti:formProperty id="documentId" required="true" type="long"/>
+						<activiti:formProperty id="action" required="false" type="enum"> 
+							<activiti:value id="implement" name="Implement" /> 
+						</activiti:formProperty>
+						<activiti:taskListener event="create" class="com.example.DueDateAssignmentListener">
+							<extensionElements>
+					      		<activiti:field name="configurationService" expression="${configurationService}"/>
+					      		<activiti:field name="logicalTaskName" stringValue="dcaUpdateAndImplement"/>
+					  		</extensionElements>
+					 	</activiti:taskListener>				   		 	
+				  	</extensionElements>
+				</userTask>
+			  	
+			
+				<callActivity id="callSaveAndImplement" name="Save and Implement " calledElement="SaveAndImplement">
+					<documentation>
+						Save and Implement Document in apps, in real-time, if Document is current
+					</documentation>
+					<extensionElements>
+				         <activiti:in sourceExpression="${documentId}" target="documentId" />
+				         <activiti:in sourceExpression="${currGroup}" target="group"/>
+		  		         <!-- <activiti:in sourceExpression="${'dcaEdit'}" target="action" /> -->
+		  		         <activiti:in sourceExpression="${user}" target="userid" />
+			 		</extensionElements>
+				</callActivity>
+			<serviceTask id="stResponseMessageDcaContinued" 
+	             name="Message - Provide a Response Message to the User" 
+	             activiti:class="com.example.ResponseMessageTask">
+	         	<extensionElements>
+	      			<activiti:field name="message" expression="Document ${documentId} has been implemented." />
+	  			</extensionElements>
+	         </serviceTask>
+				
+		
+				<sequenceFlow sourceRef="implementReadyUserTask" targetRef="callSaveAndImplement"/>
+		  		<sequenceFlow sourceRef="callSaveAndImplement" targetRef="stResponseMessageDcaContinued"/>
+		  		<sequenceFlow sourceRef="stResponseMessageDcaContinued" targetRef="subprocessEnd"/>
+		
+			  	<endEvent id="subprocessEnd"/>
+		
+			</subProcess>
+			
+			
+			
+			<serviceTask id="stResponseMessageAllDCAsDone" 
+	             name="Message - Provide a Response Message to the User" 
+	             activiti:class="com.example.ResponseMessageTask">
+	         	<extensionElements>
+	      			<activiti:field name="message" expression="All DCA Subtasks for Document ${documentId} have been completed. The Document is fully implemented." />
+	  			</extensionElements>
+	         </serviceTask>
+		
+		<sequenceFlow sourceRef="implementReadySubProcess" targetRef="stResponseMessageAllDCAsDone"/>
+		<sequenceFlow sourceRef="stResponseMessageAllDCAsDone" targetRef="theEnd"/>
+		
+		<!--
+			TODO: To Check How and Where the deletion of a process applies. 
+		<serviceTask id="deletePendingProcesses" name="Delete pending and claimed DocumentStatus processes for this Document" activiti:expression="${workflowService.deletePendingAndClaimedProcessByKey(loa.id, 'DocumentStatus', 'Implemented')}">
+			<documentation>
+				Delete pending and claimed processes by Document Id and Process definition key.
+			</documentation>
+		</serviceTask>
+		
+		<sequenceFlow sourceRef="deletePendingProcesses" targetRef="checkPreviousVersion"/>
+		
+		
+		-->	
+		<endEvent id="theEnd" />	
+	</process>
+</definitions>

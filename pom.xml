@@ -1,0 +1,62 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+	<groupId>com.github.trevershick</groupId>
+	<artifactId>example-bpmn-dot-render</artifactId>
+	<version>0.0.1-SNAPSHOT</version>
+
+	<build>
+
+		<plugins>
+			<plugin>
+				<groupId>org.codehaus.mojo</groupId>
+				<artifactId>xml-maven-plugin</artifactId>
+				<version>1.0</version>
+				<executions>
+					<execution>
+						<phase>process-resources</phase>
+						<goals>
+							<goal>transform</goal>
+						</goals>
+					</execution>
+				</executions>
+				<configuration>
+					<transformationSets>
+						<transformationSet>
+							<dir>src/main/resources/activiti</dir>
+							<stylesheet>src/main/resources/xsl/bpmn.dot.xsl</stylesheet>
+							<outputDir>target/generated-sources/dot</outputDir>
+							<fileMappers>
+								<fileMapper
+									implementation="org.codehaus.plexus.components.io.filemappers.RegExpFileMapper">
+									<pattern>^(.*)\.bpmn20.xml$</pattern>
+									<replacement>$1.dot</replacement>
+								</fileMapper>
+							</fileMappers>--&gt;
+						</transformationSet>
+					</transformationSets>
+				</configuration>
+			</plugin>
+			<plugin>
+				<groupId>us.bryon</groupId>
+				<artifactId>graphviz-maven-plugin</artifactId>
+				<version>1.0</version>
+				<executions>
+					<execution>
+						<phase>process-resources</phase>
+						<goals>
+							<goal>dot</goal>
+						</goals>
+					</execution>
+				</executions>
+				<configuration>
+					<basedir>target/generated-sources/dot</basedir>
+					<destdir>target/classes/activiti</destdir>
+				</configuration>
+			</plugin>
+
+
+		</plugins>
+
+	</build>
+</project>
