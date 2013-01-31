@@ -1,0 +1,32 @@
+digraph G {
+	splines="FALSE";
+	node [shape="box",fixedsize=true,width=3.5,height=0.75,];
+
+	subgraph cluster_0 {
+	fixedsize=true;
+	width=7.0;
+	style = filled;
+	fillcolor=yellow;
+		label = "Maven";
+		XSLT;
+		GRAPHVIZ;
+		DOT;
+		COMPILER;
+		{rank=same; COMPILER;GRAPHVIZ;}
+	}
+	
+	BPMN;
+
+	BPMN -> XSLT -> DOT -> GRAPHVIZ -> PNG;
+	BPMN -> COMPILER -> BPMNOUT;
+	
+	BPMN [style=filled,label="src/main/resources/activiti/*.bpmn20.xml"]
+	DOT [style=filled,label="target/generated-sources/dot/*.dot"]
+	XSLT [style=filled,fillcolor=green,label="<<XSLT>>\nxml-maven-plugin:transform\nsrc/xsl/bpmn.dot.xsl"];
+	COMPILER [style=filled,fillcolor=green,label="<<Copy>>\nmaven-resources-plugin:copy-resources"];
+	GRAPHVIZ [style=filled,fillcolor=green,label="<<Graphviz>>\nus.bryon:graphviz-maven-plugin"];
+	PNG [style=filled,label="/target/classes/activiti/*.png"]
+	BPMNOUT [style=filled,label="/target/classes/activiti/*.bpmn20.xml"]
+	/* Ranks */
+	{rank=same; BPMNOUT;PNG;}
+}
