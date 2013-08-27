@@ -196,3 +196,6 @@ I've included a sample implementation of a servlet that loads the process defini
 
 
 ![Servlet Image](image_servlet-2.png)
+
+[![Bitdeli Badge](https://d2weczhvl823v0.cloudfront.net/trevershick/example-bpmn-dot-render/trend.png)](https://bitdeli.com/free "Bitdeli Badge")
+
